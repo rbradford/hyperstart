@@ -222,17 +222,6 @@ static int hyper_pod_init(void *data)
 	}
 	signal(SIGCHLD, pod_init_sigchld);
 
-	/* mount new proc directory */
-	if (umount("/proc") < 0) {
-		perror("umount proc filesystem failed\n");
-		goto fail;
-	}
-
-	if (mount("proc", "/proc", "proc", MS_NOSUID| MS_NODEV| MS_NOEXEC, NULL) < 0) {
-		perror("mount proc filesystem failed\n");
-		goto fail;
-	}
-
 	if (sethostname(pod->hostname, strlen(pod->hostname)) < 0) {
 		perror("set host name failed");
 		goto fail;
