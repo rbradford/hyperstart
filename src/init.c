@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,9 @@ struct hyper_pod global_pod = {
 struct hyper_ctl ctl;
 
 sigset_t orig_mask;
+
+/* is_init is true when hyperstart is run as the Linux init process */
+static bool is_init;
 
 static int hyper_handle_exit(struct hyper_pod *pod);
 
@@ -1255,6 +1259,9 @@ static int hyper_loop(void)
 
 static int hyper_setup_init_process(void)
 {
+	if (!is_init)
+		return 0;
+
 	/* mount the base file systems */
 	if (mount("proc", "/proc", "proc", MS_NOSUID| MS_NODEV| MS_NOEXEC, NULL) == -1) {
 		perror("mount proc failed");
@@ -1296,7 +1303,10 @@ static int hyper_setup_init_process(void)
 
 int main(int argc, char *argv[])
 {
-	char *cmdline, *ctl_serial, *tty_serial;
+	char *binary_name, *cmdline, *ctl_serial, *tty_serial;
+
+	binary_name = basename(argv[0]);
+	is_init = strncmp(binary_name, "init", 5) == 0;
 
 	if (hyper_setup_init_process() < 0) {
 		return -1;
