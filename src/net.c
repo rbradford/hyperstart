@@ -774,9 +774,6 @@ int hyper_setup_network(struct hyper_pod *pod)
 	struct hyper_route *rt;
 	struct rtnl_handle rth;
 
-	if (hyper_rescan() < 0)
-		return -1;
-
 	if (netlink_open(&rth) < 0)
 		return -1;
 
