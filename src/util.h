@@ -16,6 +16,8 @@ struct env;
 #define dprintf(fmr, ...)
 #endif
 
+#define free_if_set(var) if (var) { free(var); var=NULL; }
+
 char *read_cmdline(void);
 int hyper_setup_env(struct env *envs, int num);
 int hyper_find_sd(char *addr, char **dev);

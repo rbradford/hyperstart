@@ -38,6 +38,14 @@ struct hyper_route {
 	char		*device;
 };
 
+struct uevent {
+        char *action;
+        char *modalias;
+        char *driver;
+        char *devpath;
+        char *interface;
+};
+
 struct hyper_pod;
 int hyper_rescan(void);
 void hyper_set_be32(uint8_t *buf, uint32_t val);
