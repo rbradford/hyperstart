@@ -14,6 +14,8 @@
 #include "parse.h"
 #include "../config.h"
 
+#define UEVENT_BUFFER_SIZE 512
+
 void hyper_set_be32(uint8_t *buf, uint32_t val)
 {
 	buf[0] = val >> 24;
@@ -172,6 +174,128 @@ static int addattr_l(struct nlmsghdr *n, int maxlen, int type, void *data, int a
 	memcpy(RTA_DATA(rta), data, alen);
 	n->nlmsg_len = NLMSG_ALIGN(n->nlmsg_len) + len;
 	return 0;
+}
+
+
+static int free_uevent(struct uevent *ue){
+
+	if(! ue){ return -1; }
+
+	free_if_set(ue->action);
+	free_if_set(ue->modalias);
+	free_if_set(ue->driver);
+	free_if_set(ue->devpath);
+	free_if_set(ue->interface);
+
+	return 0;
+}
+
+static int parse_uevent(const char *msg, struct uevent *ue, int len)
+{
+        if( !(msg && ue) ) {
+                return -1;
+        }
+
+        if( len < 0 ) {
+                return -1;
+        }
+
+	struct udev_label{
+		const char* label;
+		char** var;
+	} labels [] = {
+		{ "ACTION=", &(ue->action)},
+		{ "MODALIAS=", &(ue->modalias)},
+		{ "DRIVER=", &(ue->driver)},
+		{ "DEVPATH=", &(ue->devpath)},
+		{ "INTERFACE=", &(ue->interface)},
+		{ NULL }
+	};
+
+        while (*msg) {
+
+		for (struct udev_label* l=labels;  l && l->label ; l++) {
+			if (!*l->var && !strncmp(msg, l->label, strlen(l->label))) {
+				msg += strlen(l->label);
+				*l->var= strdup(msg);
+			}
+		}
+                /* advance to after the next \0 */
+                while (*msg++);
+        }
+
+	return 0;
+}
+
+
+
+static int wait_for_nic(const char *nic_name)
+{
+	struct sockaddr_nl nls;
+	char msg[UEVENT_BUFFER_SIZE];
+	int fd = -1;
+	int ret = -1;
+	char path[PATH_MAX];
+	struct uevent ue = {0};
+
+	if (! (nic_name && nic_name[0])) {
+		return -1;
+	}
+
+
+	sprintf(path, "/sys/class/net/%s/ifindex", nic_name);
+
+	if ( access( path, F_OK ) != -1 ) {
+		fprintf(stdout, "nic %s already exists\n", nic_name);
+		return 0;
+	}
+
+	memset(&nls, 0, sizeof(struct sockaddr_nl));
+	nls.nl_family = AF_NETLINK;
+	nls.nl_pid = getpid();
+	nls.nl_groups = -1;
+
+	fd = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_KOBJECT_UEVENT);
+	if (fd==-1){
+		perror("Open socket failed\n");
+		return -1;
+	}
+
+
+	if (bind(fd, (void *)&nls, sizeof(struct sockaddr_nl))) {
+		perror("Bind failed\n");
+		goto out;
+	}
+
+	if ( access( path, F_OK ) != -1 ) {
+		ret = 0;
+		fprintf(stdout, "nic %s detected \n", nic_name);
+		goto out;
+	}
+
+	while (1){
+		int len = recv(fd, msg, sizeof(msg), 0);
+		if (parse_uevent(msg, &ue, len) < 0) {
+			goto out;
+		}
+
+		if(! (ue.action && ue.interface)) {
+			free_uevent(&ue);
+			continue;
+		}
+
+		if (strcmp(ue.interface, nic_name) == 0 ){
+			fprintf(stdout, "nic %s detected\n", nic_name);
+			free_uevent(&ue);
+			ret = 0;
+			goto out;
+		}
+		free_uevent(&ue);
+
+	}
+out:
+	close(fd);
+	return ret;
 }
 
 static int hyper_get_ifindex(char *nic)
@@ -627,6 +751,10 @@ static int hyper_setup_interface(struct rtnl_handle *rth,
 	req.n.nlmsg_type = RTM_NEWADDR;
 	req.ifa.ifa_family = AF_INET;
 
+	if (wait_for_nic(iface->device) < 0){
+		fprintf(stderr, "failed to wait for  %s\n", iface->device);
+		return -1;
+	}
 	ifindex = hyper_get_ifindex(iface->device);
 	if (ifindex < 0) {
 		fprintf(stderr, "failed to get the ifindix of %s\n", iface->device);
@@ -773,9 +901,6 @@ int hyper_setup_network(struct hyper_pod *pod)
 	struct hyper_interface *iface;
 	struct hyper_route *rt;
 	struct rtnl_handle rth;
-
-	if (hyper_rescan() < 0)
-		return -1;
 
 	if (netlink_open(&rth) < 0)
 		return -1;
