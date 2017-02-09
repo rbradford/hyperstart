@@ -274,7 +274,10 @@ int hyper_getgrouplist(const char *user, gid_t group, gid_t *groups, int *ngroup
 			}
 		}
 	}
-	fclose(file);
+
+	if (file)
+		fclose(file);
+
 	if (nr == 0) {
 		if (nr + 1 < *ngroups)
 			groups[nr] = group;
