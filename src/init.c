@@ -618,7 +618,35 @@ static int hyper_kill_container(char *json, int length)
 		goto out;
 	}
 
-	kill(c->exec.pid, (int)json_object_get_number(json_object(value), "signal"));
+	const int signal = (int)json_object_get_number(json_object(value), "signal");
+
+	const int all_processes = json_object_get_boolean(json_object(value),
+		"allProcesses");
+
+	/*
+	* json_object_get_boolean returns '1' only when
+	* 'allProcesses' exists and is true
+	*/
+	if (all_processes == 1) {
+		struct hyper_exec *exec;
+
+		list_for_each_entry(exec, &pod->exec_head, list) {
+			/*
+			* Kill exec processes before container workload
+			* to ensure all processes receive the signal
+			*/
+			if (strcmp(exec->container_id, c->id) == 0
+				&& exec->pid != c->exec.pid ) {
+				fprintf(stdout, "killing exec process %d\n", exec->pid);
+				kill(exec->pid, signal);
+			}
+		}
+	}
+
+	fprintf(stdout, "killing container workload %d\n", c->exec.pid);
+	/* killing container workload */
+	kill(c->exec.pid, signal);
+
 	ret = 0;
 out:
 	json_value_free(value);
