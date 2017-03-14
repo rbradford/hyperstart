@@ -31,6 +31,7 @@ struct hyper_interface {
 	struct list_head  ipaddresses;
 	char             *new_device_name;
 	unsigned int      mtu;
+	char             *mac_addr;
 };
 
 struct hyper_route {
