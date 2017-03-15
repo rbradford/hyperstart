@@ -1,13 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <limits.h>
 #include <errno.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <ifaddrs.h>
 
 #include "hyper.h"
 #include "util.h"
@@ -15,6 +20,10 @@
 #include "../config.h"
 
 #define UEVENT_BUFFER_SIZE 512
+
+// EUI-48 MAC address size based on the following format
+// XX:XX:XX:XX:XX:XX + 1
+#define EUI48_MAC_ADDR_STR_SIZE 18
 
 void hyper_set_be32(uint8_t *buf, uint32_t val)
 {
@@ -753,6 +762,108 @@ static int hyper_set_interface_mtu(struct rtnl_handle *rth,
 				IFLA_MTU);
 }
 
+/*!
+ * Find network interface list, and retrieve the name of the one
+ * matching the EUI-48 hardware address provided.
+ *
+ * \param mac_addr hardware address (EUI-48) to match.
+ * \param[out] device name of the network interface matching \p mac_addr.
+ *
+ * \note In case the function succeeds, it returns 0 and \p device is
+ * filled with the right network interface name. In case the function
+ * fails, it returns -1 and \p device will point to \c NULL.
+ */
+static int hyper_get_iface_name_from_mac_addr(const char *mac_addr, char **device)
+{
+	struct ifaddrs *ifaddr, *ifa;
+	struct ifreq ifr;
+	int sock = -1;
+	char tmp_mac_addr[EUI48_MAC_ADDR_STR_SIZE];
+	int ret = -1;
+
+	if (!mac_addr || !*mac_addr) {
+		fprintf(stderr, "invalid mac_addr\n");
+		goto err;
+	}
+
+	if (!device) {
+		fprintf(stderr, "device pointer is NULL\n");
+		goto err;
+	}
+
+	if (*device) {
+		free(*device);
+		*device = NULL;
+	}
+
+	if (getifaddrs(&ifaddr) == -1) {
+		fprintf(stderr, "failed to get interface list: %s\n",
+			strerror(errno));
+		goto err;
+	}
+
+	sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sock == -1) {
+		fprintf(stderr, "failed to get socket handle: %s\n",
+			strerror(errno));
+		goto err1;
+	}
+
+	for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL) {
+			continue;
+		}
+
+		if (!strncpy(ifr.ifr_name, ifa->ifa_name,
+			    strlen(ifa->ifa_name) + 1)) {
+			fprintf(stderr, "strncpy failed to copy interface"
+				" name: %s\n", strerror(errno));
+			goto err1;
+		}
+
+		if (ioctl(sock, SIOCGIFHWADDR, &ifr) == -1) {
+			fprintf(stderr, "ioctl SIOCGIFHWADDR failed: %s\n",
+				strerror(errno));
+			goto err1;
+		}
+
+		if (snprintf(tmp_mac_addr, (size_t) EUI48_MAC_ADDR_STR_SIZE,
+			     "%02x:%02x:%02x:%02x:%02x:%02x",
+			     (uint8_t)ifr.ifr_hwaddr.sa_data[0],
+			     (uint8_t)ifr.ifr_hwaddr.sa_data[1],
+			     (uint8_t)ifr.ifr_hwaddr.sa_data[2],
+			     (uint8_t)ifr.ifr_hwaddr.sa_data[3],
+			     (uint8_t)ifr.ifr_hwaddr.sa_data[4],
+			     (uint8_t)ifr.ifr_hwaddr.sa_data[5]) < 0) {
+			fprintf(stderr, "failed to print to tmp_mac_addr\n");
+			goto err1;
+		}
+
+		if (!strcasecmp(mac_addr, tmp_mac_addr)) {
+			*device = strdup((const char*) ifr.ifr_name);
+			if (*device == NULL) {
+				fprintf(stderr, "strdup failed\n");
+				goto err1;
+			}
+
+			break;
+		}
+	}
+
+	if (*device == NULL) {
+		fprintf(stderr, "failed to find MAC address %s\n", mac_addr);
+		goto err1;
+	}
+
+	ret = 0;
+
+err1:
+	freeifaddrs(ifaddr);
+err:
+	close(sock);
+	return ret;
+}
+
 static int hyper_setup_interface(struct rtnl_handle *rth,
 			       struct hyper_interface *iface)
 {
@@ -766,7 +877,8 @@ static int hyper_setup_interface(struct rtnl_handle *rth,
 	int ifindex;
 	struct hyper_ipaddress *ip;
 
-	if (!iface->device || list_empty(&iface->ipaddresses)) {
+	if ((!iface->device && !iface->mac_addr) ||
+	    list_empty(&iface->ipaddresses)) {
 		fprintf(stderr, "interface information incorrect\n");
 		return -1;
 	}
@@ -776,6 +888,14 @@ static int hyper_setup_interface(struct rtnl_handle *rth,
 	req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL;
 	req.n.nlmsg_type = RTM_NEWADDR;
 	req.ifa.ifa_family = AF_INET;
+
+	if (!iface->device &&
+	    hyper_get_iface_name_from_mac_addr(iface->mac_addr,
+					       &iface->device)) {
+		fprintf(stderr, "failed to get interface name from MAC"
+			" address %s\n", iface->mac_addr);
+		return -1;
+	}
 
 	if (wait_for_nic(iface->device) < 0){
 		fprintf(stderr, "failed to wait for  %s\n", iface->device);
