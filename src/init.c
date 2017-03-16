@@ -615,6 +615,14 @@ static int hyper_kill_container(char *json, int length)
 	c = hyper_find_container(pod, id);
 	if (c == NULL) {
 		fprintf(stderr, "can not find container whose id is %s\n", id);
+		/* if pod's init pid is 0 means container was already
+		 * cleaned there are not processes running, kill container
+		 * is not needed
+		 */
+		if (pod->init_pid == 0) {
+			fprintf(stdout, "container %s was already cleaned\n", id);
+			ret = 0;
+		}
 		goto out;
 	}
 
