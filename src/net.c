@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,10 +21,6 @@
 #include "../config.h"
 
 #define UEVENT_BUFFER_SIZE 512
-
-// EUI-48 MAC address size based on the following format
-// XX:XX:XX:XX:XX:XX + 1
-#define EUI48_MAC_ADDR_STR_SIZE 18
 
 void hyper_set_be32(uint8_t *buf, uint32_t val)
 {
@@ -765,6 +762,82 @@ static int hyper_set_interface_mtu(struct rtnl_handle *rth,
 /*!
  * Check hardware address related to the provided network interface name
  * matches the expected hardware address. It expects EUI-48 MAC addresses.
+ * The socket has already been opened by the caller, preventing from
+ * successive open/close in case of a loop using the same socket.
+ *
+ * \param fd socket opened by the caller.
+ * \param mac_addr hardware address (EUI-48) to match with \p net_iface one.
+ * \param net_iface network interface name.
+ *
+ * \note In case the function succeeds, it returns 0. In case the function
+ * fails, it returns -1.
+ */
+static int hyper_check_net_iface_match_mac_addr(int fd,
+						const char *mac_addr,
+						const char *net_iface)
+{
+	struct ifreq ifr;
+	char *tmp_mac_addr = NULL;
+	int ret = -1;
+
+	if (fd < 0) {
+		fprintf(stderr, "invalid socket %d\n", fd);
+		goto err;
+	}
+
+	if (!mac_addr || !*mac_addr) {
+		fprintf(stderr, "invalid mac_addr\n");
+		goto err;
+	}
+
+	if (!net_iface || !*net_iface) {
+		fprintf(stderr, "invalid net_iface\n");
+		goto err;
+	}
+
+	if (!strncpy(ifr.ifr_name, net_iface, strlen(net_iface) + 1)) {
+		fprintf(stderr, "strncpy failed to copy interface"
+			" name: %s\n", strerror(errno));
+		goto err;
+	}
+
+	if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
+		fprintf(stderr, "ioctl SIOCGIFHWADDR failed: %s\n",
+			strerror(errno));
+		goto err;
+	}
+
+	if (asprintf(&tmp_mac_addr,
+		     "%02x:%02x:%02x:%02x:%02x:%02x",
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[0],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[1],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[2],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[3],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[4],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[5]) == -1) {
+		fprintf(stderr, "failed to allocate mac_addr string\n");
+		goto err;
+	}
+
+	if (!tmp_mac_addr || !*tmp_mac_addr) {
+		fprintf(stderr, "invalid tmp_mac_addr\n");
+		goto err;
+	}
+
+	if (strcasecmp(mac_addr, tmp_mac_addr)) {
+		goto err;
+	}
+
+	ret = 0;
+
+err:
+	free(tmp_mac_addr);
+	return ret;
+} 
+
+/*!
+ * Check hardware address related to the provided network interface name
+ * matches the expected hardware address. It expects EUI-48 MAC addresses.
  *
  * \param device network interface name.
  * \param mac_addr hardware address (EUI-48) to match with \p device one.
@@ -775,9 +848,7 @@ static int hyper_set_interface_mtu(struct rtnl_handle *rth,
 static int hyper_check_device_match_mac_addr(const char *mac_addr,
 					     const char *device)
 {
-	struct ifreq ifr;
 	int sock = -1;
-	char tmp_mac_addr[EUI48_MAC_ADDR_STR_SIZE];
 	int ret = -1;
 
 	if (!mac_addr || !*mac_addr) {
@@ -797,34 +868,9 @@ static int hyper_check_device_match_mac_addr(const char *mac_addr,
 		goto err;
 	}
 
-	if (!strncpy(ifr.ifr_name, device, strlen(device) + 1)) {
-		fprintf(stderr, "strncpy failed to copy interface"
-			" name: %s\n", strerror(errno));
-		goto err;
-	}
-
-	if (ioctl(sock, SIOCGIFHWADDR, &ifr) == -1) {
-		fprintf(stderr, "ioctl SIOCGIFHWADDR failed: %s\n",
-			strerror(errno));
-		goto err;
-	}
-
-	if (snprintf(tmp_mac_addr, (size_t) EUI48_MAC_ADDR_STR_SIZE,
-		     "%02x:%02x:%02x:%02x:%02x:%02x",
-		     (uint8_t)ifr.ifr_hwaddr.sa_data[0],
-		     (uint8_t)ifr.ifr_hwaddr.sa_data[1],
-		     (uint8_t)ifr.ifr_hwaddr.sa_data[2],
-		     (uint8_t)ifr.ifr_hwaddr.sa_data[3],
-		     (uint8_t)ifr.ifr_hwaddr.sa_data[4],
-		     (uint8_t)ifr.ifr_hwaddr.sa_data[5]) < 0) {
-		fprintf(stderr, "failed to print to tmp_mac_addr\n");
-		goto err;
-	}
-
-	if (!strcasecmp(mac_addr, tmp_mac_addr)) {
-		fprintf(stderr, "device mac address found %s does not match"
-			" with the expected mac address %s\n",
-			tmp_mac_addr, mac_addr);
+	if (hyper_check_net_iface_match_mac_addr(sock, mac_addr, device)) {
+		fprintf(stderr, "device mac address found does not match"
+			" with the expected one %s\n", mac_addr);
 		goto err;
 	}
 
@@ -850,9 +896,7 @@ static int hyper_get_iface_name_from_mac_addr(const char *mac_addr,
 					      char **device)
 {
 	struct ifaddrs *ifaddr, *ifa;
-	struct ifreq ifr;
 	int sock = -1;
-	char tmp_mac_addr[EUI48_MAC_ADDR_STR_SIZE];
 	int ret = -1;
 
 	if (!mac_addr || !*mac_addr) {
@@ -888,33 +932,10 @@ static int hyper_get_iface_name_from_mac_addr(const char *mac_addr,
 			continue;
 		}
 
-		if (!strncpy(ifr.ifr_name, ifa->ifa_name,
-			    strlen(ifa->ifa_name) + 1)) {
-			fprintf(stderr, "strncpy failed to copy interface"
-				" name: %s\n", strerror(errno));
-			goto err1;
-		}
-
-		if (ioctl(sock, SIOCGIFHWADDR, &ifr) == -1) {
-			fprintf(stderr, "ioctl SIOCGIFHWADDR failed: %s\n",
-				strerror(errno));
-			goto err1;
-		}
-
-		if (snprintf(tmp_mac_addr, (size_t) EUI48_MAC_ADDR_STR_SIZE,
-			     "%02x:%02x:%02x:%02x:%02x:%02x",
-			     (uint8_t)ifr.ifr_hwaddr.sa_data[0],
-			     (uint8_t)ifr.ifr_hwaddr.sa_data[1],
-			     (uint8_t)ifr.ifr_hwaddr.sa_data[2],
-			     (uint8_t)ifr.ifr_hwaddr.sa_data[3],
-			     (uint8_t)ifr.ifr_hwaddr.sa_data[4],
-			     (uint8_t)ifr.ifr_hwaddr.sa_data[5]) < 0) {
-			fprintf(stderr, "failed to print to tmp_mac_addr\n");
-			goto err1;
-		}
-
-		if (!strcasecmp(mac_addr, tmp_mac_addr)) {
-			*device = strdup((const char*) ifr.ifr_name);
+		if (!hyper_check_net_iface_match_mac_addr(sock,
+							  mac_addr,
+							  ifa->ifa_name)) {
+			*device = strdup((const char*) ifa->ifa_name);
 			if (*device == NULL) {
 				fprintf(stderr, "strdup failed\n");
 				goto err1;
@@ -922,6 +943,7 @@ static int hyper_get_iface_name_from_mac_addr(const char *mac_addr,
 
 			break;
 		}
+
 	}
 
 	if (*device == NULL) {
