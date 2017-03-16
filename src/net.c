@@ -763,6 +763,79 @@ static int hyper_set_interface_mtu(struct rtnl_handle *rth,
 }
 
 /*!
+ * Check hardware address related to the provided network interface name
+ * matches the expected hardware address. It expects EUI-48 MAC addresses.
+ *
+ * \param device network interface name.
+ * \param mac_addr hardware address (EUI-48) to match with \p device one.
+ *
+ * \note In case the function succeeds, it returns 0. In case the function
+ * fails, it returns -1.
+ */
+static int hyper_check_device_match_mac_addr(const char *mac_addr,
+					     const char *device)
+{
+	struct ifreq ifr;
+	int sock = -1;
+	char tmp_mac_addr[EUI48_MAC_ADDR_STR_SIZE];
+	int ret = -1;
+
+	if (!mac_addr || !*mac_addr) {
+		fprintf(stderr, "invalid mac_addr\n");
+		goto err;
+	}
+
+	if (!device || !*device) {
+		fprintf(stderr, "invalid device\n");
+		goto err;
+	}
+
+	sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sock == -1) {
+		fprintf(stderr, "failed to get socket handle: %s\n",
+			strerror(errno));
+		goto err;
+	}
+
+	if (!strncpy(ifr.ifr_name, device, strlen(device) + 1)) {
+		fprintf(stderr, "strncpy failed to copy interface"
+			" name: %s\n", strerror(errno));
+		goto err;
+	}
+
+	if (ioctl(sock, SIOCGIFHWADDR, &ifr) == -1) {
+		fprintf(stderr, "ioctl SIOCGIFHWADDR failed: %s\n",
+			strerror(errno));
+		goto err;
+	}
+
+	if (snprintf(tmp_mac_addr, (size_t) EUI48_MAC_ADDR_STR_SIZE,
+		     "%02x:%02x:%02x:%02x:%02x:%02x",
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[0],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[1],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[2],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[3],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[4],
+		     (uint8_t)ifr.ifr_hwaddr.sa_data[5]) < 0) {
+		fprintf(stderr, "failed to print to tmp_mac_addr\n");
+		goto err;
+	}
+
+	if (!strcasecmp(mac_addr, tmp_mac_addr)) {
+		fprintf(stderr, "device mac address found %s does not match"
+			" with the expected mac address %s\n",
+			tmp_mac_addr, mac_addr);
+		goto err;
+	}
+
+	ret = 0;
+
+err:
+	close(sock);
+	return ret;
+}
+
+/*!
  * Find network interface list, and retrieve the name of the one
  * matching the EUI-48 hardware address provided.
  *
@@ -773,7 +846,8 @@ static int hyper_set_interface_mtu(struct rtnl_handle *rth,
  * filled with the right network interface name. In case the function
  * fails, it returns -1 and \p device will point to \c NULL.
  */
-static int hyper_get_iface_name_from_mac_addr(const char *mac_addr, char **device)
+static int hyper_get_iface_name_from_mac_addr(const char *mac_addr,
+					      char **device)
 {
 	struct ifaddrs *ifaddr, *ifa;
 	struct ifreq ifr;
@@ -889,7 +963,13 @@ static int hyper_setup_interface(struct rtnl_handle *rth,
 	req.n.nlmsg_type = RTM_NEWADDR;
 	req.ifa.ifa_family = AF_INET;
 
-	if (!iface->device &&
+	if (iface->device && iface->mac_addr &&
+	    hyper_check_device_match_mac_addr(iface->device,
+					      iface->mac_addr)) {
+		fprintf(stderr, "failed to match device %s and mac_addr %s\n",
+			iface->device, iface->mac_addr);
+		return -1;
+	} else if (!iface->device &&
 	    hyper_get_iface_name_from_mac_addr(iface->mac_addr,
 					       &iface->device)) {
 		fprintf(stderr, "failed to get interface name from MAC"
