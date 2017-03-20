@@ -752,15 +752,17 @@ fail:
 
 void hyper_free_interface(struct hyper_interface *iface)
 {
-        struct hyper_ipaddress *ip, *tmp;
+	struct hyper_ipaddress *ip, *tmp;
 
-        list_for_each_entry_safe(ip, tmp, &iface->ipaddresses , list) {
-                free(ip->addr);
-                free(ip->mask);
-                list_del_init(&ip->list);
-        }
-        free(iface->device);
-        free(iface->new_device_name);
+	list_for_each_entry_safe(ip, tmp, &iface->ipaddresses , list) {
+		free(ip->addr);
+		free(ip->mask);
+		list_del_init(&ip->list);
+	}
+
+	free(iface->device);
+	free(iface->new_device_name);
+	free(iface->mac_addr);
 }
 
 static int hyper_parse_interface(struct hyper_interface *iface,
@@ -843,6 +845,9 @@ static int hyper_parse_interface(struct hyper_interface *iface,
 		} else if (json_token_streq(json, &toks[i], "mtu")) {
 			iface->mtu = (json_token_int(json, &toks[++i]));
 			fprintf(stdout, "mtu is %d\n", iface->mtu);
+		} else if (json_token_streq(json, &toks[i], "macAddr")) {
+			iface->mac_addr = (json_token_str(json, &toks[++i]));
+			fprintf(stdout, "net mac address is %s\n", iface->mac_addr);
                 } else {
 			fprintf(stderr, "get unknown section %s in interfaces\n",
 				json_token_str(json, &toks[i]));
