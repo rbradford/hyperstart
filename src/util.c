@@ -27,6 +27,19 @@
 #define STATELESS_PASSWD_FILE "/usr/share/defaults/etc/passwd"
 #define STATELESS_GROUP_FILE "/usr/share/defaults/etc/group"
 
+/*
+ * This structure defines the default password.
+ * It is used when no password file could be found.
+ */
+static struct passwd default_passwd = {
+	.pw_name = "root",
+	.pw_uid = 0,
+	.pw_gid = 0,
+	.pw_gecos = "root",
+	/* hello-world container has not '/root', let's use '/' instead */
+	.pw_dir = "/"
+};
+
 char *read_cmdline(void)
 {
 	return NULL;
@@ -178,8 +191,14 @@ struct passwd *hyper_getpwnam(const char *name)
 	uid_t uid = (uid_t)id_or_max(name);
 
 	pwd = hyper_getpwnam_from_file("/etc/passwd", name, uid);
-	if ( !pwd)
+	if ( !pwd) {
 		pwd = hyper_getpwnam_from_file(STATELESS_PASSWD_FILE, name, uid);
+		if ( !pwd) {
+			/* return default passwd to avoid errors */
+			pwd = &default_passwd;
+		}
+	}
+
 	return pwd;
 }
 
@@ -238,7 +257,9 @@ int hyper_getgrouplist(const char *user, gid_t group, gid_t *groups, int *ngroup
 		stateless = true;
 		if (!file) {
 			perror("not able to open stateless file either");
-			return -1;
+			/* This is not fatal, let's set ngroups to '0' and return '0' */
+			ngroups = 0;
+			return 0;
 		}
 	}
 
