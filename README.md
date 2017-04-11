@@ -1,3 +1,8 @@
+<a href="https://scan.coverity.com/projects/hyperstart">
+  <img alt="Coverity Scan Build Status"
+       src="https://scan.coverity.com/projects/12404/badge.svg"/>
+</a>
+
 # The init Task for HyperContainer
 
 You can get the binary installer of HyperContainer and HyperStart through [The Hyper Page](https://github.com/hyperhq/hyperd)
