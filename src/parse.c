@@ -516,6 +516,14 @@ static int hyper_parse_process(struct hyper_exec *exec, char *json, jsmntok_t *t
 			exec->workdir = (json_token_str(json, &toks[++i]));
 			fprintf(stdout, "container workdir %s\n", exec->workdir);
 			i++;
+		} else if (json_token_streq(json, t, "rows") && t->size == 1) {
+			exec->rows = json_token_int(json, &toks[++i]);
+			fprintf(stdout, "container rows %d\n", exec->rows);
+			i++;
+		}  else if (json_token_streq(json, t, "columns") && t->size == 1) {
+			exec->columns = json_token_int(json, &toks[++i]);
+			fprintf(stdout, "container columns %d\n", exec->columns);
+			i++;
 		}
 	}
 

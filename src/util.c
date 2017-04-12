@@ -819,3 +819,18 @@ ssize_t nonblock_read(int fd, void *buf, size_t count)
 
 	return len > 0 ? len : ret;
 }
+
+int set_win_size(int fd, int rows, int columns)
+{
+	int ret;
+	struct winsize size = {
+		.ws_row = rows,
+		.ws_col = columns,
+	};
+
+	ret = ioctl(fd, TIOCSWINSZ, &size);
+	if (ret < 0) {
+		perror("cannot ioctl to set pty device term size");
+	}
+	return ret;
+}

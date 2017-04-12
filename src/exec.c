@@ -621,6 +621,11 @@ int hyper_run_process(struct hyper_exec *exec)
 		goto out;
 	}
 
+	if (exec->ptyfd >= 0 && set_win_size(exec->ptyfd, exec->rows, exec->columns) < 0) {
+		fprintf(stderr, "set win size failed");
+		goto out;
+	}
+
 	if (pipe2(pipe, O_CLOEXEC) < 0) {
 		perror("create pipe between pod init execcmd failed");
 		goto close_tty;
