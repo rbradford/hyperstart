@@ -39,6 +39,8 @@ struct hyper_exec {
 	uint64_t		seq;
 	uint64_t		errseq;
 	char			*workdir;
+	int 			rows;
+	int 			columns;
 };
 
 struct hyper_pod;

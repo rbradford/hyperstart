@@ -49,9 +49,8 @@ static int hyper_handle_exit(struct hyper_pod *pod);
 
 static int hyper_set_win_size(char *json, int length)
 {
-	struct winsize size;
 	struct hyper_exec *exec;
-	int ret;
+	int ret, columns, rows;
 
 	fprintf(stdout, "call hyper_win_size, json %s, len %d\n", json, length);
 	JSON_Value *value = hyper_json_parse(json, length);
@@ -69,12 +68,10 @@ static int hyper_set_win_size(char *json, int length)
 		goto out;
 	}
 
-	size.ws_row = (int)json_object_get_number(json_object(value), "row");
-	size.ws_col = (int)json_object_get_number(json_object(value), "column");
+	rows = (int)json_object_get_number(json_object(value), "row");
+	columns = (int)json_object_get_number(json_object(value), "column");
 
-	ret = ioctl(exec->ptyfd, TIOCSWINSZ, &size);
-	if (ret < 0)
-		perror("cannot ioctl to set pty device term size");
+	ret = set_win_size(exec->ptyfd, rows, columns);
 
 out:
 	json_value_free(value);

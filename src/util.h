@@ -44,4 +44,5 @@ struct passwd *hyper_getpwnam(const char *name);
 struct group *hyper_getgrnam(const char *name);
 int hyper_getgrouplist(const char *user, gid_t group, gid_t *groups, int *ngroups);
 ssize_t nonblock_read(int fd, void *buf, size_t count);
+int set_win_size(int fd, int rows, int columns);
 #endif
