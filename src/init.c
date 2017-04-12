@@ -479,6 +479,11 @@ static int hyper_setup_pod(struct hyper_pod *pod)
 		return -1;
 	}
 
+	if (hyper_setup_iptables(pod) < 0) {
+		fprintf(stderr, "iptable rules setup failed\n");
+		return -1;
+	}
+
 	if (hyper_setup_dns(pod) < 0) {
 		fprintf(stderr, "setup network failed\n");
 		return -1;

@@ -19,6 +19,9 @@ struct env;
 
 #define free_if_set(var) if (var) { free(var); var=NULL; }
 
+#define close_if_set(fd) \
+        if ((fd != -1)) { close(fd); fd=-1; }
+
 char *read_cmdline(void);
 int hyper_setup_env(struct env *envs, int num);
 int hyper_find_sd(char *addr, char **dev);
