@@ -1283,6 +1283,10 @@ realloc:
 				goto out;
 
 			i += next;
+		} else if (json_token_streq(json, t, "iptableRules") && t->size == 1) {
+			pod->iptable_rules= (json_token_str(json, &toks[++i]));
+			fprintf(stdout, "iptable rules provided:%s\n", pod->iptable_rules);
+			i++;
 		} else {
 			fprintf(stdout, "get unknown section %s in pod\n",
 				json_token_str(json, &toks[i]));
