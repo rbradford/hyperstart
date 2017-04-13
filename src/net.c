@@ -14,6 +14,7 @@
 #include <netdb.h>
 #include <net/if.h>
 #include <ifaddrs.h>
+#include <sys/wait.h>
 
 #include "hyper.h"
 #include "util.h"
@@ -1358,4 +1359,140 @@ void hyper_cleanup_dns(struct hyper_pod *pod)
 	}
 
 	close(fd);
+}
+
+int hyper_setup_iptables(struct hyper_pod *pod) {
+	int pid, status;
+	int pipefd[2] = {-1, -1};
+	int pipe_parent_err[2] = {-1, -1};
+	int ret = -1;
+	size_t size, offset = 0;
+	int pipe_size = 0;
+	const char *cmd = "iptables-restore";
+
+	if (! pod) {
+		return -1;
+	}
+
+	if (! pod->iptable_rules) {
+		return 0;
+	}
+
+	if (! *(pod->iptable_rules)) {
+		free(pod->iptable_rules);
+		return 0;
+	}
+
+	if (pipe(pipefd) == -1) {
+		fprintf(stderr, "Error while creating pipe for iptables: %s\n",
+				strerror(errno));
+		goto err;
+	}
+
+	if (pipe2(pipe_parent_err, O_CLOEXEC) == -1) {
+		fprintf(stderr, "Error while creating parent error pipe for "
+				"iptables: %s\n",
+				strerror(errno));
+		goto err;
+	}
+
+	pid = fork();
+	if ( pid == -1) {
+		fprintf(stderr, "Failed to spawn child: %s\n", strerror(errno));
+		goto err;
+	}
+
+	if (pid == 0) {
+		char c;
+		close_if_set(pipefd[1]);
+		close_if_set(pipe_parent_err[1]);
+
+		if (read(pipe_parent_err[0], &c, sizeof(c)) != 0) {
+			fprintf(stderr, "Parent setup failed for command %s\n",
+					cmd);
+		}
+
+		/* The rules are sent to the stdin of iptables-restore
+		 */
+		if (dup2(pipefd[0], STDIN_FILENO) == -1) {
+			fprintf(stderr, "Dup call failed : %s\n",
+					strerror(errno));
+			goto err_child;
+		}
+
+		fprintf(stdout, "execing %s\n", cmd);
+		if (execlp(cmd, cmd, "-v", NULL) == -1) {
+			fprintf(stderr, "Exec call for %s failed :%s\n",
+					cmd, strerror(errno));
+		}
+
+err_child:
+		close_if_set(pipefd[0]);
+		close_if_set(pipe_parent_err[0]);
+		exit(EXIT_FAILURE);
+	}
+
+	//parent
+	close_if_set(pipefd[0]);
+	close_if_set(pipe_parent_err[0]);
+
+	size = strlen(pod->iptable_rules);
+
+	pipe_size = fcntl(pipefd[1], F_GETPIPE_SZ);
+	if (pipe_size <= size) {
+		if (fcntl(pipefd[1], F_SETPIPE_SZ, size+1) < 0) {
+			fprintf(stderr, "failed to change pipe size: %s",
+				strerror(errno));
+			goto err_parent;
+		}
+	}
+
+	while (offset < size) {
+		ret = write(pipefd[1], pod->iptable_rules+offset, size-offset);
+		if (ret < 0 && ret != EINTR) {
+			break;
+		}
+		offset += ret;
+	}
+
+err_parent:
+	if (offset < size) {
+		fprintf(stderr, "Pipe Write err : %s\n", strerror(errno));
+		if (write(pipe_parent_err[1], "E", 1) == -1) {
+			fprintf(stderr, "Error writing to parent err pipe: "
+				"%s\n", strerror(errno));
+		}
+	}
+
+	close_if_set(pipe_parent_err[1]);
+	close_if_set(pipefd[1]);
+
+	if (waitpid(pid, &status, 0) <= 0) {
+		fprintf(stderr, "Error waiting for child for %s: %s",
+			 cmd, strerror(errno));
+		goto err;
+	}
+
+	if (WIFEXITED(status)) {
+		ret = WEXITSTATUS(status);
+		fprintf(stdout, "Command %s exited normally, "
+				"status %" PRIu8 "\n", 
+				cmd, ret);
+		if (ret == 0) {
+			free(pod->iptable_rules);
+			return 0;
+		}
+	}
+
+	fprintf(stdout, "Command %s exit unexpectedly, "
+			"status %" PRIu8 "\n",
+			cmd, status);
+
+err:
+	close_if_set(pipefd[0]);
+	close_if_set(pipefd[1]);
+	close_if_set(pipe_parent_err[0]);
+	close_if_set(pipe_parent_err[1]);
+	free(pod->iptable_rules);
+	return -1;
 }

@@ -35,6 +35,7 @@ struct hyper_pod {
 	uint32_t		remains;
 	int			req_destroy;
 	int			efd;
+	char                    *iptable_rules;
 };
 
 struct portmapping_white_list {
