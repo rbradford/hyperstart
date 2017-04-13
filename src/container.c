@@ -691,6 +691,7 @@ int hyper_setup_container(struct hyper_container *container, struct hyper_pod *p
 		.pipens = {-1, -1},
 	};
 	int flags = CLONE_NEWNS | SIGCHLD;
+	
 	char path[128];
 	void *stack;
 	uint32_t type;
@@ -732,6 +733,8 @@ int hyper_setup_container(struct hyper_container *container, struct hyper_pod *p
 		perror("open container mount ns failed");
 		goto fail;
 	}
+
+
 	hyper_send_type(arg.pipens[1], READY);
 
 	/* wait for ready message */
@@ -781,6 +784,7 @@ void hyper_cleanup_container(struct hyper_container *c, struct hyper_pod *pod)
 		perror("umount devpts failed");
 
 	close(c->ns);
+	close(c->pid_ns);
 	hyper_cleanup_container_portmapping(c, pod);
 	hyper_free_container(c);
 }

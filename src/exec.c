@@ -475,6 +475,9 @@ static int hyper_setup_stdio_events(struct hyper_exec *exec, struct stdio_config
 static int hyper_do_exec_cmd(struct hyper_exec *exec, int pipe, struct stdio_config *io)
 {
 	struct hyper_container *c;
+	int ret;
+	char path[128];
+
 
 	if (hyper_enter_sandbox(exec->pod, pipe) < 0) {
 		perror("enter pidns of pod init failed");
@@ -492,6 +495,45 @@ static int hyper_do_exec_cmd(struct hyper_exec *exec, int pipe, struct stdio_con
 		perror("fail to enter container ns");
 		goto out;
 	}
+
+	if (c->pid_ns > 0) {
+		if (setns(c->pid_ns, CLONE_NEWPID) < 0) {
+			perror("fail to enter container pid ns");
+			goto out;
+		}
+	} else {
+		if (unshare(CLONE_NEWPID) < 0) {
+			perror("failed to create new pid ns");
+			goto out;
+		}
+
+		sprintf(path, "/proc/%d/ns/pid", getpid());
+		c->pid_ns = open(path, O_RDONLY | O_CLOEXEC);
+		if (c->pid_ns < 0) {
+			perror("open container pid ns failed");
+			goto out;
+		}
+	}
+
+
+	/* current process isn't in the pidns even setns(pidns, CLONE_NEWPID)
+	 * was called. fork() is needed, so that the child process will run in
+	 * the pidns, see man 2 setns */
+	ret = fork();
+	fprintf(stderr, "hyper_do_exec_cmd fork: ret= %d\n", ret);
+
+	if (ret < 0) {
+		perror("fail to fork");
+	} else if (ret > 0) {
+		fprintf(stdout, "create child process pid=%d in the sandbox\n", ret);
+		if (pipe > 0) {
+			hyper_send_type(pipe, ret);
+		}
+		_exit(0);
+	}
+
+	fprintf(stderr, "pid after fork = %d\n", getpid());
+
 	if (chdir("/") < 0) {
 		perror("fail to change to the root of the rootfs");
 		goto out;
@@ -545,12 +587,12 @@ static void hyper_exec_process(struct hyper_exec *exec, struct stdio_config *io)
 	}
 
 	setsid();
+	fprintf(stderr, "exec process %s %d\n", exec->argv[0], getpid());
 
 	if (hyper_install_process_stdio(exec, io) < 0) {
 		fprintf(stderr, "dup pts to exec stdio failed\n");
 		goto exit;
 	}
-
 	if (execvp(exec->argv[0], exec->argv) < 0) {
 		// perror possibly changes the errno.
 		int err = errno;
