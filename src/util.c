@@ -311,7 +311,8 @@ int hyper_getgrouplist(const char *user, gid_t group, gid_t *groups, int *ngroup
 
 int hyper_write_file(const char *path, const char *value, size_t len)
 {
-	size_t size = 0, l;
+	size_t size = 0;
+	ssize_t l;
 	int fd = open(path, O_WRONLY);
 	if (fd < 0) {
 		perror("open file failed");
