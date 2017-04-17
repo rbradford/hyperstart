@@ -38,6 +38,8 @@ struct hyper_pod global_pod = {
 
 #define MAXEVENTS	10
 
+#define PROC_UPTIME_PATH "/proc/uptime"
+
 struct hyper_ctl ctl;
 
 sigset_t orig_mask;
@@ -517,7 +519,8 @@ static int hyper_setup_pod(struct hyper_pod *pod)
 static void hyper_print_uptime(void)
 {
 	char buf[128];
-	int fd = open("/proc/uptime", O_RDONLY);
+	int fd = open(PROC_UPTIME_PATH, O_RDONLY);
+	ssize_t bytes_read;
 
 	if (fd < 0)
 		return;
@@ -526,8 +529,20 @@ static void hyper_print_uptime(void)
 	memset(buf, 0, buffer_size + 1);
 	buf[buffer_size] = '\0';
 
-	if (read(fd, buf, buffer_size))
+	bytes_read = read(fd, buf, buffer_size);
+	if (bytes_read < 0) {
+		fprintf(stdout, "reading %s failed: %s\n",
+			PROC_UPTIME_PATH, strerror(errno));
+	} else if (bytes_read == 0) {
+		fprintf(stderr, "EOF reading %s\n", PROC_UPTIME_PATH);
+	} else {
+		if (bytes_read > buffer_size) {
+			bytes_read = buffer_size;
+		}
+		buf[bytes_read] = '\0';
+
 		fprintf(stdout, "uptime %s\n", buf);
+	}
 
 	close(fd);
 }
