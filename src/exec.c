@@ -385,12 +385,12 @@ static int hyper_setup_stdio(struct hyper_exec *e, struct stdio_config *io)
 static int hyper_install_process_stdio(struct hyper_exec *e, struct stdio_config *io)
 {
 	int ret = -1;
+	int ptyslave = -1;
 
 	fprintf(stdout, "%s\n", __func__);
 
 	if (e->tty) {
 		char ptmx[512];
-		int ptyslave;
 
 		sprintf(ptmx, "/dev/pts/%d", e->ptyno);
 		ptyslave = open(ptmx, O_RDWR | O_CLOEXEC);
@@ -427,6 +427,7 @@ static int hyper_install_process_stdio(struct hyper_exec *e, struct stdio_config
 	 */
 	ret = 0;
 out:
+	close(ptyslave);
 	return ret;
 }
 

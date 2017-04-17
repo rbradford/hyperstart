@@ -148,8 +148,10 @@ static void hyper_term_all(struct hyper_pod *pod)
 			continue;
 		if (index <= npids) {
 			pids = realloc(pids, npids + 16384);
-			if (pids == NULL)
+			if (pids == NULL) {
+				closedir(dp);
 				return;
+			}
 			npids += 16384;
 		}
 
