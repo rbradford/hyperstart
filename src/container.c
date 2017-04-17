@@ -188,7 +188,10 @@ static int container_setup_volume(struct hyper_container *container)
 		fprintf(stdout, "mount %s to %s\n", path, mountpoint);
 
 		src = path;
-		stat(src, &st);
+		if (stat(src, &st)) {
+			fprintf(stderr, "stat %s failed: %s", src, strerror(errno));
+			continue;
+		}
 
 		if (st.st_mode & S_IFDIR) {
 			if (hyper_mkdir(mountpoint, 0755) < 0) {
