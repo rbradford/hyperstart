@@ -378,9 +378,14 @@ int hyper_enter_sandbox(struct hyper_pod *pod, int pidpipe)
 	}
 
 out:
-	close(pidns);
-	close(ipcns);
-	close(utsns);
+	if (pidns >= 0)
+		close(pidns);
+
+	if (ipcns >= 0)
+		close(ipcns);
+
+	if (utsns >= 0)
+		close(utsns);
 
 	return ret;
 }
@@ -847,7 +852,8 @@ static int hyper_cmd_rw_file(char *json, int length, uint32_t *rdatalen, uint8_t
 	ret = 0;
 
 out:
-	close(fd);
+	if (fd >= 0)
+		close(fd);
 	close(arg.pipe[0]);
 	close(arg.pipe[1]);
 	free(cmd.id);

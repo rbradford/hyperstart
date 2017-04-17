@@ -878,7 +878,8 @@ static int hyper_check_device_match_mac_addr(const char *mac_addr,
 	ret = 0;
 
 err:
-	close(sock);
+	if (sock >= 0)
+		close(sock);
 	return ret;
 }
 
@@ -957,7 +958,9 @@ static int hyper_get_iface_name_from_mac_addr(const char *mac_addr,
 err1:
 	freeifaddrs(ifaddr);
 err:
-	close(sock);
+	if (sock >= 0)
+		close(sock);
+
 	return ret;
 }
 

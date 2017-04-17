@@ -746,7 +746,8 @@ int hyper_setup_container(struct hyper_container *container, struct hyper_pod *p
 	close(arg.pipens[1]);
 	return 0;
 fail:
-	close(container->ns);
+	if (container->ns >= 0)
+		close(container->ns);
 	container->ns = -1;
 	close(arg.pipe[0]);
 	close(arg.pipe[1]);

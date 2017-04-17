@@ -427,7 +427,9 @@ static int hyper_install_process_stdio(struct hyper_exec *e, struct stdio_config
 	 */
 	ret = 0;
 out:
-	close(ptyslave);
+	if (ptyslave >= 0)
+		close(ptyslave);
+
 	return ret;
 }
 
@@ -657,9 +659,15 @@ int hyper_run_process(struct hyper_exec *exec)
 	fprintf(stdout, "%s process pid %d\n", __func__, exec->pid);
 	ret = 0;
 out:
-	close(io.stdinfd);
-	close(io.stdoutfd);
-	close(io.stderrfd);
+	if (io.stdinfd >= 0)
+		close(io.stdinfd);
+
+	if (io.stdoutfd >= 0)
+		close(io.stdoutfd);
+
+	if (io.stderrfd >= 0)
+		close(io.stderrfd);
+
 	close(pipe[0]);
 	close(pipe[1]);
 	return ret;
@@ -670,9 +678,16 @@ close_tty:
 	list_del_init(&exec->list);
 
 	close(exec->ptyfd);
-	close(io.stdinevfd);
-	close(io.stdoutevfd);
-	close(io.stderrevfd);
+
+	if (io.stdinevfd >= 0)
+		close(io.stdinevfd);
+
+	if (io.stdoutevfd >= 0)
+		close(io.stdoutevfd);
+
+	if (io.stderrevfd >= 0)
+		close(io.stderrevfd);
+
 	goto out;
 }
 
