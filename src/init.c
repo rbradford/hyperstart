@@ -514,8 +514,12 @@ static void hyper_print_uptime(void)
 
 	if (fd < 0)
 		return;
-	memset(buf, 0, sizeof(buf));
-	if (read(fd, buf, sizeof(buf)))
+
+	int buffer_size = sizeof(buf) - 1;
+	memset(buf, 0, buffer_size + 1);
+	buf[buffer_size] = '\0';
+
+	if (read(fd, buf, buffer_size))
 		fprintf(stdout, "uptime %s\n", buf);
 
 	close(fd);
