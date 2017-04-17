@@ -496,8 +496,8 @@ static int hyper_rescan_scsi(void)
 	}
 
 	fprintf(stdout, "finish scan scsi\n");
-	return 0;
 	free(list);
+	return 0;
 }
 
 struct hyper_container_arg {
