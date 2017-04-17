@@ -184,6 +184,9 @@ static void container_cleanup_exec(struct hyper_exec *exec)
 {
 	int i;
 
+	if (!exec)
+		return;
+
 	free(exec->container_id);
 	exec->container_id = NULL;
 
