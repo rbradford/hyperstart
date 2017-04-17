@@ -987,8 +987,8 @@ static int hyper_setup_interface(struct rtnl_handle *rth,
 	req.ifa.ifa_family = AF_INET;
 
 	if (iface->device && iface->mac_addr &&
-	    hyper_check_device_match_mac_addr(iface->device,
-					      iface->mac_addr)) {
+	    hyper_check_device_match_mac_addr(iface->mac_addr,
+					      iface->device)) {
 		fprintf(stderr, "failed to match device %s and mac_addr %s\n",
 			iface->device, iface->mac_addr);
 		return -1;
