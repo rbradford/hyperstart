@@ -309,6 +309,7 @@ static int hyper_get_ifindex(char *nic)
 {
 	int fd, ifindex = -1;
 	char path[512], buf[8];
+	ssize_t bytes_read;
 
 	fprintf(stdout, "net device %s\n", nic);
 	sprintf(path, "/sys/class/net/%s/ifindex", nic);
@@ -321,7 +322,8 @@ static int hyper_get_ifindex(char *nic)
 	}
 
 	memset(buf, 0, sizeof(buf));
-	if (read(fd, buf, sizeof(buf) - 1) <= 0) {
+	bytes_read = read(fd, buf, sizeof(buf) - 1);
+	if (bytes_read <= 0) {
 		perror("can read open file");
 		goto out;
 	}
@@ -878,7 +880,8 @@ static int hyper_check_device_match_mac_addr(const char *mac_addr,
 	ret = 0;
 
 err:
-	close(sock);
+	if (sock >= 0)
+		close(sock);
 	return ret;
 }
 
@@ -957,7 +960,9 @@ static int hyper_get_iface_name_from_mac_addr(const char *mac_addr,
 err1:
 	freeifaddrs(ifaddr);
 err:
-	close(sock);
+	if (sock >= 0)
+		close(sock);
+
 	return ret;
 }
 
@@ -987,8 +992,8 @@ static int hyper_setup_interface(struct rtnl_handle *rth,
 	req.ifa.ifa_family = AF_INET;
 
 	if (iface->device && iface->mac_addr &&
-	    hyper_check_device_match_mac_addr(iface->device,
-					      iface->mac_addr)) {
+	    hyper_check_device_match_mac_addr(iface->mac_addr,
+					      iface->device)) {
 		fprintf(stderr, "failed to match device %s and mac_addr %s\n",
 			iface->device, iface->mac_addr);
 		return -1;

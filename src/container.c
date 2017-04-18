@@ -188,7 +188,10 @@ static int container_setup_volume(struct hyper_container *container)
 		fprintf(stdout, "mount %s to %s\n", path, mountpoint);
 
 		src = path;
-		stat(src, &st);
+		if (stat(src, &st)) {
+			fprintf(stderr, "stat %s failed: %s", src, strerror(errno));
+			continue;
+		}
 
 		if (st.st_mode & S_IFDIR) {
 			if (hyper_mkdir(mountpoint, 0755) < 0) {
@@ -496,8 +499,8 @@ static int hyper_rescan_scsi(void)
 	}
 
 	fprintf(stdout, "finish scan scsi\n");
-	return 0;
 	free(list);
+	return 0;
 }
 
 struct hyper_container_arg {
@@ -746,7 +749,8 @@ int hyper_setup_container(struct hyper_container *container, struct hyper_pod *p
 	close(arg.pipens[1]);
 	return 0;
 fail:
-	close(container->ns);
+	if (container->ns >= 0)
+		close(container->ns);
 	container->ns = -1;
 	close(arg.pipe[0]);
 	close(arg.pipe[1]);

@@ -38,6 +38,8 @@ struct hyper_pod global_pod = {
 
 #define MAXEVENTS	10
 
+#define PROC_UPTIME_PATH "/proc/uptime"
+
 struct hyper_ctl ctl;
 
 sigset_t orig_mask;
@@ -148,8 +150,10 @@ static void hyper_term_all(struct hyper_pod *pod)
 			continue;
 		if (index <= npids) {
 			pids = realloc(pids, npids + 16384);
-			if (pids == NULL)
+			if (pids == NULL) {
+				closedir(dp);
 				return;
+			}
 			npids += 16384;
 		}
 
@@ -376,9 +380,14 @@ int hyper_enter_sandbox(struct hyper_pod *pod, int pidpipe)
 	}
 
 out:
-	close(pidns);
-	close(ipcns);
-	close(utsns);
+	if (pidns >= 0)
+		close(pidns);
+
+	if (ipcns >= 0)
+		close(ipcns);
+
+	if (utsns >= 0)
+		close(utsns);
 
 	return ret;
 }
@@ -510,13 +519,30 @@ static int hyper_setup_pod(struct hyper_pod *pod)
 static void hyper_print_uptime(void)
 {
 	char buf[128];
-	int fd = open("/proc/uptime", O_RDONLY);
+	int fd = open(PROC_UPTIME_PATH, O_RDONLY);
+	ssize_t bytes_read;
 
 	if (fd < 0)
 		return;
-	memset(buf, 0, sizeof(buf));
-	if (read(fd, buf, sizeof(buf)))
+
+	int buffer_size = sizeof(buf) - 1;
+	memset(buf, 0, buffer_size + 1);
+	buf[buffer_size] = '\0';
+
+	bytes_read = read(fd, buf, buffer_size);
+	if (bytes_read < 0) {
+		fprintf(stdout, "reading %s failed: %s\n",
+			PROC_UPTIME_PATH, strerror(errno));
+	} else if (bytes_read == 0) {
+		fprintf(stderr, "EOF reading %s\n", PROC_UPTIME_PATH);
+	} else {
+		if (bytes_read > buffer_size) {
+			bytes_read = buffer_size;
+		}
+		buf[bytes_read] = '\0';
+
 		fprintf(stdout, "uptime %s\n", buf);
+	}
 
 	close(fd);
 }
@@ -841,7 +867,8 @@ static int hyper_cmd_rw_file(char *json, int length, uint32_t *rdatalen, uint8_t
 	ret = 0;
 
 out:
-	close(fd);
+	if (fd >= 0)
+		close(fd);
 	close(arg.pipe[0]);
 	close(arg.pipe[1]);
 	free(cmd.id);

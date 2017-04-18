@@ -311,7 +311,8 @@ int hyper_getgrouplist(const char *user, gid_t group, gid_t *groups, int *ngroup
 
 int hyper_write_file(const char *path, const char *value, size_t len)
 {
-	size_t size = 0, l;
+	size_t size = 0;
+	ssize_t l;
 	int fd = open(path, O_WRONLY);
 	if (fd < 0) {
 		perror("open file failed");
@@ -609,6 +610,7 @@ int hyper_open_channel(char *channel, int mode)
 	struct dirent *dir;
 	int fd = -1, i, num;
 	char path[256], name[128];
+	ssize_t bytes_read;
 
 	num = scandir("/sys/class/virtio-ports/", &list, NULL, NULL);
 	if (num < 0) {
@@ -629,13 +631,18 @@ int hyper_open_channel(char *channel, int mode)
 		}
 
 		fd = open(path, O_RDONLY);
-
-		memset(name, 0, sizeof(name));
-		if (fd < 0 || read(fd, name, sizeof(name)) < 0)
+		if (fd < 0)
 			continue;
 
+		memset(name, 0, sizeof(name));
+
+		bytes_read = read(fd, name, sizeof(name));
+		if (bytes_read < 0) {
+			close(fd);
+			continue;
+		}
+
 		close(fd);
-		fd = -1;
 
 		if (strncmp(name, channel, strlen(channel))) {
 			continue;
